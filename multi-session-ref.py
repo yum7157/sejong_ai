@@ -46,20 +46,36 @@ def _merge_streamlit_secrets_into_environ() -> None:
 
 _merge_streamlit_secrets_into_environ()
 
-LOG_DIR = _REPO_ROOT / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+def _resolve_log_dir() -> Path:
+    """로컬은 저장소 `logs/`, Streamlit Cloud 등 읽기 전용 환경은 temp 아래에 쓴다."""
+    preferred = _REPO_ROOT / "logs"
+    try:
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    except (OSError, PermissionError):
+        pass
+    fallback = Path(tempfile.gettempdir()) / "multi_session_rag_logs"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+LOG_DIR = _resolve_log_dir()
 _LOG_FILE = LOG_DIR / f"multi_session_rag_{datetime.now():%Y%m%d}.log"
 
 _logger = logging.getLogger("multi_session_rag")
 _logger.setLevel(logging.WARNING)
 if not _logger.handlers:
-    _fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
-    _fh.setLevel(logging.WARNING)
-    _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    try:
+        _fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        _fh.setLevel(logging.WARNING)
+        _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        _logger.addHandler(_fh)
+    except (OSError, PermissionError):
+        pass
     _ch = logging.StreamHandler()
     _ch.setLevel(logging.WARNING)
     _ch.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    _logger.addHandler(_fh)
     _logger.addHandler(_ch)
 
 for _name in ("httpx", "httpcore", "urllib3", "openai", "langchain", "langchain_openai"):
